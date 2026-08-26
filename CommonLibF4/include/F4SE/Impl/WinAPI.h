@@ -66,6 +66,9 @@ namespace F4SE::WinAPI
 
 	[[nodiscard]] std::size_t(GetMaxPath)() noexcept;
 
+	[[nodiscard]] bool(IsExecutableAddress)(const void* a_address) noexcept;
+	[[nodiscard]] bool(IsReadableAddress)(const void* a_address) noexcept;
+
 	[[nodiscard]] std::uint32_t(GetModuleFileName)(
 		void* a_module,
 		char* a_filename,

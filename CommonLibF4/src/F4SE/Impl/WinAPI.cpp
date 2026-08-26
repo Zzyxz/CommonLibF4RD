@@ -268,6 +268,58 @@ namespace F4SE::WinAPI
 				static_cast<::UINT>(a_type)));
 	}
 
+	bool(IsExecutableAddress)(const void* a_address) noexcept
+	{
+		if (!a_address) {
+			return false;
+		}
+
+		::MEMORY_BASIC_INFORMATION information{};
+		if (::VirtualQuery(a_address, std::addressof(information), sizeof(information)) !=
+				sizeof(information) ||
+			information.State != MEM_COMMIT ||
+			(information.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0) {
+			return false;
+		}
+
+		switch (information.Protect & 0xFFu) {
+		case PAGE_EXECUTE:
+		case PAGE_EXECUTE_READ:
+		case PAGE_EXECUTE_READWRITE:
+		case PAGE_EXECUTE_WRITECOPY:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	bool(IsReadableAddress)(const void* a_address) noexcept
+	{
+		if (!a_address) {
+			return false;
+		}
+
+		::MEMORY_BASIC_INFORMATION information{};
+		if (::VirtualQuery(a_address, std::addressof(information), sizeof(information)) !=
+				sizeof(information) ||
+			information.State != MEM_COMMIT ||
+			(information.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0) {
+			return false;
+		}
+
+		switch (information.Protect & 0xFFu) {
+		case PAGE_READONLY:
+		case PAGE_READWRITE:
+		case PAGE_WRITECOPY:
+		case PAGE_EXECUTE_READ:
+		case PAGE_EXECUTE_READWRITE:
+		case PAGE_EXECUTE_WRITECOPY:
+			return true;
+		default:
+			return false;
+		}
+	}
+
 	void(OutputDebugString)(
 		const char* a_outputString) noexcept
 	{

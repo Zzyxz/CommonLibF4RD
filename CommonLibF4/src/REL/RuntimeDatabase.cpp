@@ -2277,7 +2277,10 @@ namespace REL
 			const auto typeInfo = readPointer(a_value);
 			const auto typeInfoRVA = typeInfo ? pointerRVA(*typeInfo) : std::nullopt;
 			const auto spare = readPointer(a_value + sizeof(std::uint64_t));
-			return spare && *spare == 0 && typeInfoRVA &&
+			const auto spareValid = spare &&
+				(*spare == 0 || F4SE::WinAPI::IsReadableAddress(
+					reinterpret_cast<const void*>(static_cast<std::uintptr_t>(*spare))));
+			return spareValid && typeInfoRVA &&
 				inSegment(Segment::rdata, *typeInfoRVA);
 		};
 		const auto validHierarchy = [&](std::uint32_t a_value, std::uint32_t a_expectedType) {
@@ -2377,16 +2380,70 @@ namespace REL
 			return false;
 		}
 		if ((flags & RECORD_VTABLE) != 0) {
-			if (a_rva < sizeof(std::uint64_t) || a_rva % alignof(std::uint64_t) != 0 ||
-				!inResultSegment(Segment::rdata) || !readable(a_rva - sizeof(std::uint64_t), 16)) {
+			const auto geometryValid =
+				a_rva >= sizeof(std::uint64_t) && a_rva % alignof(std::uint64_t) == 0 &&
+				inResultSegment(Segment::rdata) && readable(a_rva - sizeof(std::uint64_t), 16);
+			if (!geometryValid) {
+				spdlog::error(
+					"F4RD VTABLE validation id={} rva=0x{:X} geometry=invalid aligned={} rdata={} readable={}",
+					a_record.id,
+					a_rva,
+					a_rva % alignof(std::uint64_t) == 0,
+					inResultSegment(Segment::rdata),
+					a_rva >= sizeof(std::uint64_t) &&
+						readable(a_rva - sizeof(std::uint64_t), 16));
 				return false;
 			}
 			const auto locator = readPointer(a_rva - sizeof(std::uint64_t));
 			const auto firstSlot = readPointer(a_rva);
 			const auto locatorRVA = locator ? pointerRVA(*locator) : std::nullopt;
 			const auto firstSlotRVA = firstSlot ? pointerRVA(*firstSlot) : std::nullopt;
-			if (!locatorRVA || !firstSlotRVA || !validLocator(*locatorRVA) ||
-				!inSegment(Segment::text, *firstSlotRVA)) {
+			const auto locatorValid = locatorRVA && validLocator(*locatorRVA);
+			const auto firstSlotInText =
+				firstSlotRVA && inSegment(Segment::text, *firstSlotRVA);
+			const auto firstSlotExecutable = firstSlot &&
+				F4SE::WinAPI::IsExecutableAddress(
+					reinterpret_cast<const void*>(static_cast<std::uintptr_t>(*firstSlot)));
+			const auto validFirstSlot = firstSlot &&
+				(firstSlotInText || firstSlotExecutable);
+			if (!locatorValid || !validFirstSlot) {
+				spdlog::error(
+					"F4RD VTABLE validation id={} rva=0x{:X} locator=0x{:X} locator_rva={} locator_valid={} first_slot=0x{:X} first_slot_rva={} first_slot_text={} first_slot_executable={}",
+					a_record.id,
+					a_rva,
+					locator.value_or(0),
+					locatorRVA ? fmt::format("0x{:X}", *locatorRVA) : "outside_image",
+					locatorValid,
+					firstSlot.value_or(0),
+					firstSlotRVA ? fmt::format("0x{:X}", *firstSlotRVA) : "outside_image",
+					firstSlotInText,
+					firstSlotExecutable);
+				if (locatorRVA && readable(*locatorRVA, 24)) {
+					const auto typeDescriptor = readU32(*locatorRVA + 12);
+					const auto hierarchy = readU32(*locatorRVA + 16);
+					const auto typeInfo = typeDescriptor ? readPointer(*typeDescriptor) : std::nullopt;
+					const auto typeInfoRVA = typeInfo ? pointerRVA(*typeInfo) : std::nullopt;
+					const auto spare = typeDescriptor ?
+						readPointer(*typeDescriptor + sizeof(std::uint64_t)) :
+						std::nullopt;
+					spdlog::error(
+						"F4RD VTABLE locator id={} signature={} type=0x{:X} type_valid={} type_info=0x{:X} type_info_rva={} type_info_readable={} spare=0x{:X} spare_readable={} hierarchy=0x{:X} hierarchy_valid={} self=0x{:X}",
+						a_record.id,
+						readU32(*locatorRVA).value_or(UINT32_MAX),
+						typeDescriptor.value_or(0),
+						typeDescriptor && validTypeDescriptor(*typeDescriptor),
+						typeInfo.value_or(0),
+						typeInfoRVA ? fmt::format("0x{:X}", *typeInfoRVA) : "outside_image",
+						typeInfo && F4SE::WinAPI::IsReadableAddress(
+							reinterpret_cast<const void*>(static_cast<std::uintptr_t>(*typeInfo))),
+						spare.value_or(0),
+						spare && (*spare == 0 || F4SE::WinAPI::IsReadableAddress(
+							reinterpret_cast<const void*>(static_cast<std::uintptr_t>(*spare)))),
+						hierarchy.value_or(0),
+						typeDescriptor && hierarchy &&
+							validHierarchy(*hierarchy, *typeDescriptor),
+						readU32(*locatorRVA + 20).value_or(0));
+				}
 				return false;
 			}
 		}
@@ -3242,7 +3299,10 @@ namespace REL
 			const auto typeInfo = readPointer(a_rva);
 			const auto spare = readPointer(a_rva + sizeof(std::uint64_t));
 			const auto typeInfoRVA = typeInfo ? pointerRVA(*typeInfo) : std::nullopt;
-			return spare && *spare == 0 && typeInfoRVA &&
+			const auto spareValid = spare &&
+				(*spare == 0 || F4SE::WinAPI::IsReadableAddress(
+					reinterpret_cast<const void*>(static_cast<std::uintptr_t>(*spare))));
+			return spareValid && typeInfoRVA &&
 				inSegment(Segment::rdata, *typeInfoRVA) &&
 				a_rva <= UINT32_MAX - 16 && validMsvcName(a_rva + 16);
 		};
@@ -3315,8 +3375,11 @@ namespace REL
 			const auto locator = readPointer(a_rva - sizeof(std::uint64_t));
 			const auto firstSlot = readPointer(a_rva);
 			const auto functionRVA = firstSlot ? pointerRVA(*firstSlot) : std::nullopt;
-			return locator && *locator == a_module.base() + a_locatorRVA && functionRVA &&
-				inSegment(Segment::text, *functionRVA);
+			const auto validFirstSlot = firstSlot &&
+				((functionRVA && inSegment(Segment::text, *functionRVA)) ||
+					F4SE::WinAPI::IsExecutableAddress(
+						reinterpret_cast<const void*>(static_cast<std::uintptr_t>(*firstSlot))));
+			return locator && *locator == a_module.base() + a_locatorRVA && validFirstSlot;
 		};
 
 		const auto functionContaining = [&](std::uint32_t a_rva) -> std::optional<std::uint32_t> {
