@@ -1,0 +1,94 @@
+#pragma once
+
+#include "RE/NetImmerse/NiPoint3.h"
+#include "RE/NetImmerse/NiPoint4.h"
+
+namespace RE
+{
+	class alignas(0x10) NiMatrix3
+	{
+	public:
+		void MakeIdentity() noexcept
+		{
+			entry[0].v = { 1.0F, 0.0F, 0.0F, 0.0F };
+			entry[1].v = { 0.0F, 1.0F, 0.0F, 0.0F };
+			entry[2].v = { 0.0F, 0.0F, 1.0F, 0.0F };
+		}
+
+		// members
+		NiPoint4 entry[3];  // 00
+
+		NiMatrix3 operator*(const NiMatrix3& rhs) const
+		{
+			NiMatrix3 tmp;
+			tmp.entry[0].pt[0] =
+				entry[0].pt[0] * rhs.entry[0].pt[0] +
+				entry[0].pt[1] * rhs.entry[1].pt[0] +
+				entry[0].pt[2] * rhs.entry[2].pt[0];
+			tmp.entry[1].pt[0] =
+				entry[1].pt[0] * rhs.entry[0].pt[0] +
+				entry[1].pt[1] * rhs.entry[1].pt[0] +
+				entry[1].pt[2] * rhs.entry[2].pt[0];
+			tmp.entry[2].pt[0] =
+				entry[2].pt[0] * rhs.entry[0].pt[0] +
+				entry[2].pt[1] * rhs.entry[1].pt[0] +
+				entry[2].pt[2] * rhs.entry[2].pt[0];
+			tmp.entry[0].pt[1] =
+				entry[0].pt[0] * rhs.entry[0].pt[1] +
+				entry[0].pt[1] * rhs.entry[1].pt[1] +
+				entry[0].pt[2] * rhs.entry[2].pt[1];
+			tmp.entry[1].pt[1] =
+				entry[1].pt[0] * rhs.entry[0].pt[1] +
+				entry[1].pt[1] * rhs.entry[1].pt[1] +
+				entry[1].pt[2] * rhs.entry[2].pt[1];
+			tmp.entry[2].pt[1] =
+				entry[2].pt[0] * rhs.entry[0].pt[1] +
+				entry[2].pt[1] * rhs.entry[1].pt[1] +
+				entry[2].pt[2] * rhs.entry[2].pt[1];
+			tmp.entry[0].pt[2] =
+				entry[0].pt[0] * rhs.entry[0].pt[2] +
+				entry[0].pt[1] * rhs.entry[1].pt[2] +
+				entry[0].pt[2] * rhs.entry[2].pt[2];
+			tmp.entry[1].pt[2] =
+				entry[1].pt[0] * rhs.entry[0].pt[2] +
+				entry[1].pt[1] * rhs.entry[1].pt[2] +
+				entry[1].pt[2] * rhs.entry[2].pt[2];
+			tmp.entry[2].pt[2] =
+				entry[2].pt[0] * rhs.entry[0].pt[2] +
+				entry[2].pt[1] * rhs.entry[1].pt[2] +
+				entry[2].pt[2] * rhs.entry[2].pt[2];
+			return tmp;
+		}
+
+		NiMatrix3 operator*(float scalar) const
+		{
+			NiMatrix3 result;
+			result.entry[0].pt[0] = entry[0].pt[0] * scalar;
+			result.entry[0].pt[1] = entry[0].pt[1] * scalar;
+			result.entry[0].pt[2] = entry[0].pt[2] * scalar;
+			result.entry[1].pt[0] = entry[1].pt[0] * scalar;
+			result.entry[1].pt[1] = entry[1].pt[1] * scalar;
+			result.entry[1].pt[2] = entry[1].pt[2] * scalar;
+			result.entry[2].pt[0] = entry[2].pt[0] * scalar;
+			result.entry[2].pt[1] = entry[2].pt[1] * scalar;
+			result.entry[2].pt[2] = entry[2].pt[2] * scalar;
+			return result;
+		}
+
+		NiPoint3 operator*(const NiPoint3& p) const
+		{
+			return NiPoint3(
+				entry[0].pt[0] * p.x + entry[0].pt[1] * p.y + entry[0].pt[2] * p.z,
+				entry[1].pt[0] * p.x + entry[1].pt[1] * p.y + entry[1].pt[2] * p.z,
+				entry[2].pt[0] * p.x + entry[2].pt[1] * p.y + entry[2].pt[2] * p.z);
+		}
+
+		bool ToEulerAnglesXYZ(float& x, float& y, float& z)
+		{
+			using func_t = decltype(&NiMatrix3::ToEulerAnglesXYZ);
+			REL::Relocation<func_t> func{ REL::ID(34114, 2269806) };
+			return func(this, x, y, z);
+		}
+	};
+	static_assert(sizeof(NiMatrix3) == 0x30);
+}

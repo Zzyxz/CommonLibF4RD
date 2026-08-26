@@ -1,0 +1,15 @@
+{
+  "name": "commonlibf4rd",
+  "version-string": "1.0.0",
+  "description": "A C++ library for developing F4SE plugins for Fallout 4",
+  "homepage": "https://github.com/Zzyxz/CommonLibF4RD",
+  "license": "MIT",
+  "supports": "windows & x64",
+  "dependencies": [
+    "boost-stl-interfaces",
+    "fmt",
+    "rsm-mmio",
+    "spdlog",
+    "zydis"
+  ]
+}

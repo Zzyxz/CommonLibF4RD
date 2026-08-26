@@ -1,0 +1,14 @@
+{
+  "name": "exampleproject",
+  "version-string": "1.0.0",
+  "description": "An example project built using CommonLibF4RD",
+  "homepage": "https://github.com/Zzyxz/CommonLibF4RD",
+  "license": "MIT",
+  "dependencies": [
+    "boost-stl-interfaces",
+    "fmt",
+    "rsm-mmio",
+    "spdlog",
+    "zydis"
+  ]
+}
