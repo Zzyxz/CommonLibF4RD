@@ -22,6 +22,23 @@ The active runtime family is selected automatically. Plugins should not reject a
 
 Set the `VCPKG_ROOT` environment variable before using the included CMake preset.
 
+## Ready-to-build example plugin
+
+The
+[CommonLibF4RD Example Plugin](https://github.com/Zzyxz/CommonLibF4RD-ExamplePlugin)
+is a complete standalone project that can be cloned and built directly:
+
+```text
+git clone --recursive https://github.com/Zzyxz/CommonLibF4RD-ExamplePlugin.git
+```
+
+It demonstrates the required F4SE plugin metadata, OG/NG/AE runtime support,
+runtime-aware `REL::ID` declarations, `REL::VariantOffset`, automatic callsite
+discovery, and opt-in `.trace` and `.mapping` diagnostics.
+
+Use it as the starting point for a new plugin or as a reference when migrating
+an existing project.
+
 ## Adding CommonLibF4RD to a plugin
 
 Add the repository as a source dependency:
