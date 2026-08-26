@@ -1027,7 +1027,7 @@ namespace REL
 			}
 		}
 
-		if (a_mode == IDResolveMode::kNormal) {
+		if (a_mode == IDResolveMode::kNormal && isOG) {
 			if (const auto rva = legacy()) {
 				return finish(IDResolveStatus::kResolvedLegacy, *rva);
 			}
@@ -1109,9 +1109,6 @@ namespace REL
 		const auto& module = Module::get();
 		const auto version = module.version();
 		const auto isOG = runtime_family(version) == RuntimeFamily::kOG;
-		const auto legacyPath = fmt::format(
-			"Data/F4SE/Plugins/version-{}.bin",
-			version.string());
 		const auto versionedRuntimePath = fmt::format(
 			"Data/F4SE/Plugins/f4rd-runtime-{}.bin",
 			version.string());
@@ -1133,19 +1130,8 @@ namespace REL
 				break;
 			}
 		}
-		if (!_runtime && RuntimeDatabase::contains(legacyPath)) {
-			try {
-				_runtime = RuntimeDatabase::load(legacyPath);
-				loadedRuntimePath = legacyPath;
-			} catch (const std::exception& exception) {
-				stl::report_and_fail(fmt::format(
-					"failed to load runtime section from {}: {}",
-					legacyPath,
-					exception.what()));
-			}
-		}
 
-		const auto loadLegacyTable = [&](const std::filesystem::path& a_path) {
+		const auto loadEmbeddedOGTable = [&](const std::filesystem::path& a_path) {
 			_id2offset = {};
 			_mmap.close();
 			if (!_mmap.open(a_path)) {
@@ -1183,16 +1169,15 @@ namespace REL
 			return true;
 		};
 
-		const auto loadedLegacy = loadLegacyTable(legacyPath) ||
-			(isOG && !loadedRuntimePath.empty() && loadedRuntimePath != legacyPath &&
-				loadLegacyTable(loadedRuntimePath));
-		if (!loadedLegacy && !_runtimeMappings.empty()) {
+		const auto loadedOGTable = isOG && !loadedRuntimePath.empty() &&
+			loadEmbeddedOGTable(loadedRuntimePath);
+		if (!loadedOGTable && !_runtimeMappings.empty()) {
 			_id2offset = _runtimeMappings;
-		} else if (!loadedLegacy && !_runtime) {
+		} else if (!loadedOGTable && !_runtime) {
 			stl::report_and_fail(fmt::format(
 				"failed to open {} or {}",
 				runtimePath.string(),
-				legacyPath));
+				versionedRuntimePath));
 		}
 	}
 
