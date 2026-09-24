@@ -1,5 +1,6 @@
 #include "REL/Relocation.h"
 #include "InstructionDecoder.h"
+#include "ControlFlow.h"
 #include "RuntimeDatabase.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -554,6 +555,45 @@ namespace REL
 		return result;
 	}
 
+	Reachability instruction_reachability(const ID& a_owner, std::size_t a_siteRVA)
+	{
+		const auto owner = IDDatabase::get().resolve(a_owner);
+		const auto& module = Module::get();
+		if (!owner || *owner.rva > UINT32_MAX || a_siteRVA > UINT32_MAX) return Reachability::kInvalid;
+		const auto scopes = logical_function_scopes(module, static_cast<std::uint32_t>(*owner.rva));
+		std::vector<detail::CodeRange> ranges;
+		ranges.reserve(scopes.size());
+		for (const auto& [begin, end] : scopes) {
+			ranges.push_back({ begin, { reinterpret_cast<const std::uint8_t*>(module.base() + begin), end - begin } });
+		}
+		return detail::instruction_reachability(ranges, static_cast<std::uint32_t>(*owner.rva),
+			static_cast<std::uint32_t>(a_siteRVA), module.base(), [&](std::uint32_t slot) -> std::optional<std::uint64_t> {
+				if (!module_readable(module, slot, sizeof(std::uint64_t))) return std::nullopt;
+				std::uint64_t pointer{};
+				std::memcpy(&pointer, reinterpret_cast<const void*>(module.base() + slot), sizeof(pointer));
+				return pointer;
+			});
+	}
+
+	CallsiteResolveResult resolve_reachable_callsites(const ID& a_owner, const ID& a_target, AutoCallsiteBranch a_branch)
+	{
+		const auto candidates = resolve_callsites(a_owner, a_target, a_branch);
+		if (!candidates) return candidates;
+		CallsiteResolveResult result;
+		for (std::size_t i = 0; i < candidates.rvas.size(); ++i) {
+			const auto reachable = instruction_reachability(a_owner, candidates.rvas[i]);
+			if (reachable == Reachability::kInvalid || reachable == Reachability::kIndeterminate) {
+				return {}; // indeterminate result: reject all candidates
+			}
+			if (reachable == Reachability::kReachable) {
+				result.rvas.push_back(candidates.rvas[i]);
+				result.offsets.push_back(candidates.offsets[i]);
+			}
+		}
+		result.status = result.rvas.empty() ? IDResolveStatus::kCallsiteNotFound : IDResolveStatus::kResolvedPattern;
+		return result;
+	}
+
 	IDDatabase::IDDatabase()
 	{
 		load();
@@ -610,7 +650,7 @@ namespace REL
 			}
 		};
 
-		if (isOG) {
+		if (isOG || !_runtime) {
 			total = _id2offset.size();
 			for (const auto& entry : _id2offset) {
 				mapping << fmt::format("{} 0x{:X}\n", entry.id, entry.offset);
@@ -891,17 +931,18 @@ namespace REL
 			return resolve_impl(a_id.ae_id(), a_mode, true);
 		}
 
-		auto pattern = resolve_impl(a_id.ae_id(), IDResolveMode::kRuntimeOnly, false);
-		if (pattern) {
-			trace_resolution(pattern);
-			return pattern;
-		}
 		if (a_id.has_og_id()) {
 			auto legacy = resolve_impl(a_id.og_id(), IDResolveMode::kNormal, false);
 			if (legacy) {
 				trace_resolution(legacy);
 				return legacy;
 			}
+		}
+
+		auto pattern = resolve_impl(a_id.ae_id(), IDResolveMode::kRuntimeOnly, false);
+		if (pattern) {
+			trace_resolution(pattern);
+			return pattern;
 		}
 		if (!a_id.has_og_id()) {
 			pattern.status = IDResolveStatus::kOGBridgeFailed;
@@ -949,7 +990,8 @@ namespace REL
 		};
 		const auto version = Module::get().version();
 		const auto isOG = runtime_family(version) == RuntimeFamily::kOG;
-		if (a_mode == IDResolveMode::kNormal && isOG) {
+		const auto useLegacy = isOG || !_runtime;
+		if (a_mode == IDResolveMode::kNormal && useLegacy) {
 			if (const auto rva = legacy()) {
 				return finish(IDResolveStatus::kResolvedLegacy, *rva);
 			}
@@ -1027,11 +1069,6 @@ namespace REL
 			}
 		}
 
-		if (a_mode == IDResolveMode::kNormal && isOG) {
-			if (const auto rva = legacy()) {
-				return finish(IDResolveStatus::kResolvedLegacy, *rva);
-			}
-		}
 		return finish(runtimeFailure);
 	}
 
@@ -1113,6 +1150,9 @@ namespace REL
 			"Data/F4SE/Plugins/f4rd-runtime-{}.bin",
 			version.string());
 		const std::filesystem::path runtimePath = "Data/F4SE/Plugins/f4rd-runtime.bin";
+		const auto legacyPath = fmt::format(
+			"Data/F4SE/Plugins/version-{}.bin",
+			version.string());
 		std::filesystem::path loadedRuntimePath;
 		for (const auto& candidate :
 			std::array<std::filesystem::path, 2>{ runtimePath, versionedRuntimePath }) {
@@ -1131,7 +1171,7 @@ namespace REL
 			}
 		}
 
-		const auto loadEmbeddedOGTable = [&](const std::filesystem::path& a_path) {
+		const auto loadLegacyTable = [&](const std::filesystem::path& a_path) {
 			_id2offset = {};
 			_mmap.close();
 			if (!_mmap.open(a_path)) {
@@ -1169,15 +1209,16 @@ namespace REL
 			return true;
 		};
 
-		const auto loadedOGTable = isOG && !loadedRuntimePath.empty() &&
-			loadEmbeddedOGTable(loadedRuntimePath);
+		const auto loadedOGTable = _runtime && isOG && !loadedRuntimePath.empty() &&
+			loadLegacyTable(loadedRuntimePath);
 		if (!loadedOGTable && !_runtimeMappings.empty()) {
 			_id2offset = _runtimeMappings;
-		} else if (!loadedOGTable && !_runtime) {
+		} else if (!loadedOGTable && !_runtime && !loadLegacyTable(legacyPath)) {
 			stl::report_and_fail(fmt::format(
-				"failed to open {} or {}",
+				"failed to open {} or {}; Address Library fallback {} is also unavailable",
 				runtimePath.string(),
-				versionedRuntimePath));
+				versionedRuntimePath,
+				legacyPath));
 		}
 	}
 

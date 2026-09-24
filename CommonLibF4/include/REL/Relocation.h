@@ -1,5 +1,7 @@
 #pragma once
 
+#include "REL/Reachability.h"
+
 #include <cstdint>
 #include <limits>
 #include <mutex>
@@ -892,6 +894,16 @@ namespace REL
 	[[nodiscard]] CallsiteResolveResult resolve_callsites(
 		const ID& a_owner,
 		const ID& a_target,
+		AutoCallsiteBranch a_branch = AutoCallsiteBranch::kCall);
+
+	// Opt-in reachability checks for callsites. siteRVA is relative to the
+	// current game image. Only paths inside the owner's .pdata/CHAININFO scopes
+	// are considered; external detours, register jumps, jump tables and
+	// exception paths are not followed. resolve_reachable_callsites rejects
+	// indeterminate candidates (kInvalidCallsite).
+	[[nodiscard]] Reachability instruction_reachability(const ID& a_owner, std::size_t a_siteRVA);
+	[[nodiscard]] CallsiteResolveResult resolve_reachable_callsites(
+		const ID& a_owner, const ID& a_target,
 		AutoCallsiteBranch a_branch = AutoCallsiteBranch::kCall);
 
 	template <class T>
