@@ -11,7 +11,7 @@ namespace RE
 	public:
 		[[nodiscard]] static ConsoleLog* GetSingleton()
 		{
-			REL::Relocation<ConsoleLog**> singleton{ REL::ID(689441, 4797437) };
+			REL::Relocation<ConsoleLog**> singleton{ REL::ID(689441, 2690148, 4797437) };
 			return *singleton;
 		}
 
@@ -25,7 +25,7 @@ namespace RE
 		void Print(const char* a_fmt, std::va_list a_args)
 		{
 			using func_t = decltype(&ConsoleLog::Print);
-			REL::Relocation<func_t> func{ REL::ID(799546, 2248591) };
+			REL::Relocation<func_t> func{ REL::ID(799546, 2248592) };
 			func(this, a_fmt, a_args);
 		}
 

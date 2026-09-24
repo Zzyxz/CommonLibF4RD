@@ -135,7 +135,7 @@ namespace RE
 		[[nodiscard]] float GetHitFraction() const
 		{
 			using func_t = float(const bhkPickData*);
-			static REL::Relocation<func_t> func{ REL::ID(476687, 2277772) };
+			static REL::Relocation<func_t> func{ REL::ID(476687, 2277771) };
 			return func(this);
 		}
 
