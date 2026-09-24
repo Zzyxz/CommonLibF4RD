@@ -2,6 +2,7 @@
 
 #include <RE/Bethesda/TESBoundObjects.h>
 #include <RE/Bethesda/TESObjectREFRs.h>
+#include <RE/Bethesda/VATSEffects.h>
 #include <RE/NetImmerse/NiAVObject.h>
 #include <REL/Relocation.h>
 
@@ -42,6 +43,13 @@ namespace RE
 			using func_t = decltype(&TaskQueueInterface::QueueWeaponFire);
 			REL::Relocation<func_t> func{ REL::ID(15449, 2229186) };
 			return func(this, wep, shooter, index, ammo);
+		}
+
+		void QueueVATSEffectHighlight(const VatsEffectTargetPtr& a_target, const NiPointer<NiAVObject>& a_object)
+		{
+			using func_t = decltype(&TaskQueueInterface::QueueVATSEffectHighlight);
+			REL::Relocation<func_t> func{ REL::ID(922666, 2229283, 2229283) };
+			return func(this, a_target, a_object);
 		}
 	};
 }

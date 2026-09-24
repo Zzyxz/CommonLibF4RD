@@ -110,6 +110,11 @@ namespace RE
 				AE_RUNTIME_DATA_OFFSET);
 		}
 
+		[[nodiscard]] std::uint32_t GetMenuModeCount() const noexcept
+		{
+			return REL::RelocateMember<std::uint32_t>(this, 0x1E0, 0x1E0, 0x1E0);
+		}
+
 		template <class T>
 		[[nodiscard]] BSTEventSource<T>* GetEventSource()
 		{

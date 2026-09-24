@@ -39,6 +39,7 @@ set(SOURCES
 	include/RE/Bethesda/BSBound.h
 	include/RE/Bethesda/BSBTreeFile.h
 	include/RE/Bethesda/BSContainer.h
+	include/RE/Bethesda/BSCullingProcess.h
 	include/RE/Bethesda/BSExtraData.h
 	include/RE/Bethesda/BSFadeNode.h
 	include/RE/Bethesda/BSFixedString.h
@@ -121,6 +122,9 @@ set(SOURCES
 	include/RE/Bethesda/BSScriptUtil.h
 	include/RE/Bethesda/BSSemaphore.h
 	include/RE/Bethesda/BSShader.h
+	include/RE/Bethesda/BSShaderManager.h
+	include/RE/Bethesda/BSShaderAccumulator.h
+	include/RE/Bethesda/BSShaderUtil.h
 	include/RE/Bethesda/BSSoundHandle.h
 	include/RE/Bethesda/BSSpring.h
 	include/RE/Bethesda/BSStorage.h
@@ -222,6 +226,7 @@ set(SOURCES
 	include/RE/Bethesda/UserEvents.h
 	include/RE/Bethesda/Utilities.h
 	include/RE/Bethesda/VATS.h
+	include/RE/Bethesda/VATSEffects.h
 	include/RE/Bethesda/Workshop.h
 	include/RE/Fallout.h
 	include/RE/Havok/hkArray.h
@@ -254,18 +259,23 @@ set(SOURCES
 	include/RE/msvc/memory.h
 	include/RE/msvc/typeinfo.h
 	include/RE/NetImmerse/NiAlphaProperty.h
+	include/RE/NetImmerse/NiAccumulator.h
+	include/RE/NetImmerse/NiAlphaAccumulator.h
 	include/RE/NetImmerse/NiAVObject.h
+	include/RE/NetImmerse/NiBackToFrontAccumulator.h
 	include/RE/NetImmerse/NiBinaryStream.h
 	include/RE/NetImmerse/NiBound.h
 	include/RE/NetImmerse/NiCamera.h
 	include/RE/NetImmerse/NiCloningProcess.h
 	include/RE/NetImmerse/NiCollisionObject.h
 	include/RE/NetImmerse/NiColor.h
+	include/RE/NetImmerse/NiCullingProcess.h
 	include/RE/NetImmerse/NiController.h
 	include/RE/NetImmerse/NiExtraData.h
 	include/RE/NetImmerse/NiFile.h
 	include/RE/NetImmerse/NiFlags.h
 	include/RE/NetImmerse/NiFrustum.h
+	include/RE/NetImmerse/NiFrustumPlanes.h
 	include/RE/NetImmerse/NiMatrix3.h
 	include/RE/NetImmerse/NiMemStream.h
 	include/RE/NetImmerse/NiNode.h
@@ -297,6 +307,7 @@ set(SOURCES
 	include/RE/NetImmerse/NiTPointerListBase.h
 	include/RE/NetImmerse/NiTPointerMap.h
 	include/RE/NetImmerse/NiTransform.h
+	include/RE/NetImmerse/NiVisibleArray.h
 	include/RE/NiRTTI_IDs.h
 	include/RE/RTTI_IDs.h
 	include/RE/RTTI.h
@@ -334,6 +345,8 @@ set(SOURCES
 	include/RE/Scaleform/Render/Render_Viewport.h
 	include/RE/VTABLE_IDs.h
 	include/REL/Relocation.h
+	include/REL/Reachability.h
+	src/REL/ControlFlow.h
 	src/REL/InstructionDecoder.h
 	src/REL/RuntimeDatabase.h
 	src/F4SE/API.cpp
@@ -344,12 +357,16 @@ set(SOURCES
 	src/F4SE/Trampoline.cpp
 	src/RE/Bethesda/Actor.cpp
 	src/RE/Bethesda/BGSInventoryItem.cpp
+	src/RE/Bethesda/BSCullingProcess.cpp
 	src/RE/Bethesda/BSExtraData.cpp
 	src/RE/Bethesda/BSResource.cpp
 	src/RE/Bethesda/BSResource/Stream.cpp
 	src/RE/Bethesda/BSResource/StreamBase.cpp
 	src/RE/Bethesda/BSResourceNiBinaryStream.cpp
 	src/RE/Bethesda/BSScaleformManager.cpp
+	src/RE/Bethesda/BSShaderAccumulator.cpp
+	src/RE/Bethesda/BSShaderManager.cpp
+	src/RE/Bethesda/BSShaderUtil.cpp
 	src/RE/Bethesda/BSScript.cpp
 	src/RE/Bethesda/BSScript/Array.cpp
 	src/RE/Bethesda/BSScript/Internal/VirtualMachine.cpp
@@ -368,6 +385,7 @@ set(SOURCES
 	src/RE/Bethesda/TESBoundAnimObjects.cpp
 	src/RE/Bethesda/TESForms.cpp
 	src/RE/Bethesda/TESObjectREFRs.cpp
+	src/RE/Bethesda/VATSEffects.cpp
 	src/RE/Fallout.cpp
 	src/RE/NetImmerse/NiAVObject.cpp
 	src/RE/NetImmerse/NiBinaryStream.cpp
