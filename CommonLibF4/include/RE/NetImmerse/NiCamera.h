@@ -27,6 +27,16 @@ namespace RE
 		virtual void UpdateWorldBound() override;                               // 33
 		virtual void UpdateWorldData(NiUpdateData* a_data) override;            // 34
 
+		// Projects a world point through worldToCam into the camera port (0..1 with
+		// the default port, y up).  Fails for points at or behind a_zeroTolerance
+		// depth and for points outside the view frustum.
+		bool WorldPtToScreenPt(const NiPoint3& a_point, float& a_x, float& a_y, float a_zeroTolerance = 0.0F) const
+		{
+			using func_t = decltype(&NiCamera::WorldPtToScreenPt);
+			REL::Relocation<func_t> func{ REL::ID(855369, 2270341) };
+			return func(this, a_point, a_x, a_y, a_zeroTolerance);
+		}
+
 		// members
 		float worldToCam[4][4];  // 120
 		NiFrustum viewFrustum;   // 160
