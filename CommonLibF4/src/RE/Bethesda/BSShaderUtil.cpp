@@ -14,10 +14,10 @@ namespace RE::BSShaderUtil
 		func(a_camera, a_scene, a_cullingProcess, a_doAccumulation);
 	}
 
-	void RenderScene(NiCamera* a_camera, BSShaderAccumulator* a_accumulator, bool a_doRender)
+	void RenderScene(NiCamera* a_camera, BSShaderAccumulator* a_accumulator, bool a_useJitter)
 	{
 		using func_t = void(NiCamera*, BSShaderAccumulator*, bool);
 		REL::Relocation<func_t> func{ REL::ID(1310228, 2317576) };
-		func(a_camera, a_accumulator, a_doRender);
+		func(a_camera, a_accumulator, a_useJitter);
 	}
 }
