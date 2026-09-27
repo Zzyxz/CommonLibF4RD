@@ -344,8 +344,8 @@ namespace RE
 			return func(a_recipe, a_filter);
 		}
 
-		inline REL::Relocation<PlacementItemData*> CurrentPlacementItemData{ REL::ID(1279207, 4797261) };
-		inline REL::Relocation<std::uint16_t*> CurrentRow{ REL::ID(833923, 4797160) };
-		inline REL::Relocation<ObjectRefHandle*> PlacementItem{ REL::ID(526727, 4797235) };
+		inline REL::Relocation<PlacementItemData*> CurrentPlacementItemData{ REL::ID(1279207, 2689973, 4797261) };
+		inline REL::Relocation<std::uint16_t*> CurrentRow{ REL::ID(833923, 2689868, 4797160) };
+		inline REL::Relocation<ObjectRefHandle*> PlacementItem{ REL::ID(526727, 2689906, 4797235) };
 	}
 }
