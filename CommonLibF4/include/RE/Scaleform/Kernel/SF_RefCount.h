@@ -34,7 +34,7 @@ namespace RE::Scaleform
 		void AddRef()
 		{
 			stl::atomic_ref myRefCount{ refCount };
-			++refCount;
+			++myRefCount;
 		}
 
 		void Release()
