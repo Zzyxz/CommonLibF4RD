@@ -116,6 +116,8 @@ namespace REL
 		std::optional<std::ptrdiff_t> selectedOffset;
 		std::optional<std::size_t> finalRva;
 		bool automaticOffset{};
+		// Additional resolution detail, e.g. use of the known offset or an existing hook.
+		std::string note;
 
 		[[nodiscard]] explicit operator bool() const noexcept { return rva.has_value(); }
 	};
@@ -651,6 +653,9 @@ namespace REL
 		[[nodiscard]] std::size_t id2offset(std::uint64_t a_id) const;
 		[[nodiscard]] std::size_t id2offset(const ID& a_id) const;
 		[[nodiscard]] std::size_t id2offset(const ID& a_id, const VariantOffset& a_offset) const;
+		// The same without failing: an empty result instead of report_and_fail (a_out gets the resolution details).
+		[[nodiscard]] std::optional<std::size_t> id2offset_checked(
+			const ID& a_id, const VariantOffset& a_offset, bool a_fatal, IDResolveResult* a_out) const;
 		[[nodiscard]] IDResolveResult resolve(
 			std::uint64_t a_id,
 			IDResolveMode a_mode = IDResolveMode::kNormal) const;
@@ -800,6 +805,37 @@ namespace REL
 		[[nodiscard]] constexpr const ID& target() const noexcept { return _target; }
 		[[nodiscard]] constexpr AutoCallsiteBranch branch() const noexcept { return _branch; }
 		[[nodiscard]] constexpr std::uint16_t occurrence() const noexcept { return _occurrence; }
+
+		// A known offset for the listed game versions.  On those versions it is used first if the live code there
+		// is still a call (or jump, per the branch kind) to the target, or to code outside the game image - a call
+		// another plugin already redirected with write_call, which the automatic search cannot recognise.  If the
+		// check fails, the automatic search decides as before; other versions use the automatic search only.
+		//   REL::VariantOffset(REL::AUTO_CALLSITE(kTarget).or_offset(0x1C62, REL::Version{ 1, 10, 163, 0 }), ...)
+		[[nodiscard]] constexpr AutoCallsite or_offset(
+			std::ptrdiff_t a_offset,
+			Version a_version1,
+			Version a_version2 = Version{},
+			Version a_version3 = Version{},
+			Version a_version4 = Version{}) const noexcept
+		{
+			auto copy = *this;
+			copy._fallbackOffset = a_offset;
+			copy._fallbackVersions = { a_version1, a_version2, a_version3, a_version4 };
+			return copy;
+		}
+
+		[[nodiscard]] constexpr std::optional<std::ptrdiff_t> fallback_offset(const Version& a_version) const noexcept
+		{
+			if (!_fallbackOffset) {
+				return std::nullopt;
+			}
+			for (const auto& version : _fallbackVersions) {
+				if (version != Version{} && version == a_version) {
+					return _fallbackOffset;
+				}
+			}
+			return std::nullopt;
+		}
 		[[nodiscard]] constexpr bool valid(const Version& a_version) const noexcept
 		{
 			return _target.id(a_version) != ID::INVALID_ID &&
@@ -812,6 +848,8 @@ namespace REL
 		ID _target;
 		AutoCallsiteBranch _branch{ AutoCallsiteBranch::kCall };
 		std::uint16_t _occurrence{ UNIQUE };
+		std::optional<std::ptrdiff_t> _fallbackOffset;
+		std::array<Version, 4> _fallbackVersions{};
 	};
 
 	struct AutoCallsiteFactory
@@ -1048,6 +1086,19 @@ namespace REL
 		AutoCallsite _ngCallsite;
 		AutoCallsite _aeCallsite;
 	};
+
+	struct CallsiteLookup
+	{
+		std::optional<std::uintptr_t> address;
+		IDResolveResult resolution;
+
+		[[nodiscard]] explicit operator bool() const noexcept { return address.has_value(); }
+	};
+
+	// Resolve an owner ID plus (automatic or fixed) offset like Relocation does, but without report_and_fail: on
+	// any failure the address is empty and resolution.status / resolution.note say why.  For optional hooks that
+	// should switch one feature off instead of stopping the game.
+	[[nodiscard]] CallsiteLookup try_resolve_callsite(const ID& a_owner, const VariantOffset& a_offset);
 
 	template <class T>
 	class Relocation

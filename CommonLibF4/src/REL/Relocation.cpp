@@ -177,6 +177,162 @@ namespace REL
 			return false;
 		}
 
+		// Whether a_size bytes at a_address can be read (committed, readable protection, one region).
+		[[nodiscard]] bool readable_memory(std::uintptr_t a_address, std::size_t a_size) noexcept
+		{
+			MEMORY_BASIC_INFORMATION info{};
+			if (VirtualQuery(reinterpret_cast<LPCVOID>(a_address), std::addressof(info), sizeof(info)) != sizeof(info) ||
+				info.State != MEM_COMMIT || (info.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0) {
+				return false;
+			}
+			switch (info.Protect & 0xFFu) {
+			case PAGE_READONLY:
+			case PAGE_READWRITE:
+			case PAGE_WRITECOPY:
+			case PAGE_EXECUTE_READ:
+			case PAGE_EXECUTE_READWRITE:
+			case PAGE_EXECUTE_WRITECOPY:
+				break;
+			default:
+				return false;
+			}
+			const auto end = reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize;
+			return a_address <= end && a_size <= end - a_address;
+		}
+
+		// The file name of the module that owns code reached from a_address, following at most three trampoline
+		// hops (jmp [rip+0] with an absolute address, or jmp rel32) - F4SE's write_call targets such a stub.
+		[[nodiscard]] std::string foreign_module_name(std::uintptr_t a_address)
+		{
+			try {
+				auto address = a_address;
+				for (int hop = 0; hop < 4; ++hop) {
+					HMODULE module{};
+					if (GetModuleHandleExW(
+							GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+							reinterpret_cast<LPCWSTR>(address),
+							std::addressof(module))) {
+						std::array<wchar_t, 1024> path{};
+						const auto length = GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
+						if (length == 0 || length >= path.size()) {
+							return "an unnamed module";
+						}
+						std::wstring_view name(path.data(), length);
+						if (const auto slash = name.find_last_of(L"\\/"); slash != std::wstring_view::npos) {
+							name.remove_prefix(slash + 1);
+						}
+						// Manual UTF-16 to UTF-8 conversion: WideCharToMultiByte is unavailable with NONLS, and
+						// path::string() throws for names outside the ANSI code page.
+						std::string result;
+						for (std::size_t index = 0; index < name.size(); ++index) {
+							std::uint32_t code = name[index];
+							if (code >= 0xD800 && code <= 0xDBFF && index + 1 < name.size() &&
+								name[index + 1] >= 0xDC00 && name[index + 1] <= 0xDFFF) {
+								code = 0x10000 + ((code - 0xD800) << 10) + (static_cast<std::uint32_t>(name[++index]) - 0xDC00);
+							} else if (code >= 0xD800 && code <= 0xDFFF) {
+								code = 0xFFFD;
+							}
+							if (code < 0x80) {
+								result += static_cast<char>(code);
+							} else if (code < 0x800) {
+								result += static_cast<char>(0xC0 | (code >> 6));
+								result += static_cast<char>(0x80 | (code & 0x3F));
+							} else if (code < 0x10000) {
+								result += static_cast<char>(0xE0 | (code >> 12));
+								result += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+								result += static_cast<char>(0x80 | (code & 0x3F));
+							} else {
+								result += static_cast<char>(0xF0 | (code >> 18));
+								result += static_cast<char>(0x80 | ((code >> 12) & 0x3F));
+								result += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+								result += static_cast<char>(0x80 | (code & 0x3F));
+							}
+						}
+						return result.empty() ? std::string("an unnamed module") : result;
+					}
+					if (hop == 3 || !readable_memory(address, 14)) {
+						break;
+					}
+					const auto* code = reinterpret_cast<const std::uint8_t*>(address);
+					std::int32_t relative{};
+					if (code[0] == 0xFF && code[1] == 0x25) {
+						std::memcpy(std::addressof(relative), code + 2, sizeof(relative));
+						const auto slot = address + 6 + static_cast<std::intptr_t>(relative);
+						if (!readable_memory(slot, sizeof(std::uintptr_t))) {
+							break;
+						}
+						std::memcpy(std::addressof(address), reinterpret_cast<const void*>(slot), sizeof(address));
+					} else if (code[0] == 0xE9) {
+						std::memcpy(std::addressof(relative), code + 1, sizeof(relative));
+						address = address + 5 + static_cast<std::intptr_t>(relative);
+					} else {
+						break;
+					}
+				}
+			} catch (...) {
+			}
+			return "unknown code";
+		}
+
+		struct FallbackCallsiteCheck
+		{
+			bool accepted{};
+			std::string note;
+		};
+
+		// The fallback offset of an AUTO_CALLSITE (AutoCallsite::or_offset): accepted only inside the owner's code,
+		// on a call/jump (per the branch kind) to the target itself or to code outside the game image.
+		[[nodiscard]] FallbackCallsiteCheck check_fallback_callsite(
+			const Module& a_module,
+			const std::vector<std::pair<std::uint32_t, std::uint32_t>>& a_scopes,
+			std::uint32_t a_ownerRVA,
+			std::ptrdiff_t a_offset,
+			std::uint32_t a_targetRVA,
+			AutoCallsiteBranch a_branch)
+		{
+			FallbackCallsiteCheck check;
+			const auto signedSite = static_cast<std::int64_t>(a_ownerRVA) + static_cast<std::int64_t>(a_offset);
+			const auto siteRVA = signedSite < 0 ? std::uint64_t{ 0 } : static_cast<std::uint64_t>(signedSite);
+			const auto insideOwner = signedSite >= 0 && std::ranges::any_of(a_scopes, [&](const auto& a_scope) {
+				return siteRVA >= a_scope.first && siteRVA + 5 <= a_scope.second;
+			});
+			if (!insideOwner || !module_readable(a_module, siteRVA, 5)) {
+				check.note = fmt::format("known offset {:+#x} is not inside the owner's code", a_offset);
+				return check;
+			}
+			const auto* code = reinterpret_cast<const std::uint8_t*>(a_module.base() + siteRVA);
+			const auto isCall = code[0] == 0xE8;
+			const auto isJump = code[0] == 0xE9;
+			const auto kindFits = (isCall && a_branch != AutoCallsiteBranch::kJump) ||
+			                      (isJump && a_branch != AutoCallsiteBranch::kCall);
+			if (!kindFits) {
+				check.note = fmt::format(
+					"known offset {:+#x} holds no {} (byte 0x{:02X})",
+					a_offset,
+					a_branch == AutoCallsiteBranch::kCall ? "call" : a_branch == AutoCallsiteBranch::kJump ? "jump" : "call or jump",
+					code[0]);
+				return check;
+			}
+			std::int32_t relative{};
+			std::memcpy(std::addressof(relative), code + 1, sizeof(relative));
+			const auto destination = a_module.base() + static_cast<std::uintptr_t>(siteRVA) + 5 +
+			                         static_cast<std::intptr_t>(relative);
+			const auto imageBegin = a_module.base();
+			const auto imageEnd = imageBegin + a_module.image_size();
+			if (destination == imageBegin + a_targetRVA) {
+				check.accepted = true;
+			} else if (destination < imageBegin || destination >= imageEnd) {
+				check.accepted = true;
+				check.note = fmt::format(
+					"known offset {:+#x}: the call is already redirected by {}",
+					a_offset,
+					foreign_module_name(destination));
+			} else {
+				check.note = fmt::format("known offset {:+#x} calls another game function (RVA 0x{:X})", a_offset, destination - imageBegin);
+			}
+			return check;
+		}
+
 		[[nodiscard]] std::vector<std::pair<std::uint32_t, std::uint32_t>>
 		logical_function_scopes(const Module& a_module, std::uint32_t a_ownerRVA) noexcept
 		{
@@ -369,6 +525,9 @@ namespace REL
 				}
 			}
 
+			if (!a_result.note.empty()) {
+				spdlog::info("F4RD NOTE id={} {}", a_result.id, a_result.note);
+			}
 			if (!compactSuccessLogged) {
 				compactSuccessLogged = true;
 				const auto version = Module::get().version();
@@ -753,20 +912,35 @@ namespace REL
 			id_resolve_status_text(result.status)));
 	}
 
-	std::size_t IDDatabase::id2offset(const ID& a_id, const VariantOffset& a_offset) const
+	std::optional<std::size_t> IDDatabase::id2offset_checked(
+		const ID& a_id, const VariantOffset& a_offset, bool a_fatal, IDResolveResult* a_out) const
 	{
 		const auto version = Module::get().version();
 		auto result = resolve(a_id);
+		const auto fail = [&](std::string a_message) -> std::optional<std::size_t> {
+			if (a_fatal) {
+				stl::report_and_fail(a_message);
+			}
+			if (a_out) {
+				*a_out = result;
+				if (a_out->note.empty()) {
+					a_out->note = std::move(a_message);
+				} else {
+					a_out->note = a_message + "; " + a_out->note;
+				}
+			}
+			return std::nullopt;
+		};
 		if (!a_offset.valid(version)) {
 			result.rva.reset();
 			result.status = IDResolveStatus::kInvalidOffset;
 			trace_resolution(result);
-			stl::report_and_fail(fmt::format(
+			return fail(fmt::format(
 				"REL::ID {} received an offset that cannot be represented safely",
 				a_id.id(version)));
 		}
 		if (!result.rva) {
-			stl::report_and_fail(fmt::format(
+			return fail(fmt::format(
 				"REL::ID {} could not be resolved ({})",
 				a_id.id(version),
 				id_resolve_status_text(result.status)));
@@ -780,7 +954,7 @@ namespace REL
 				result.rva.reset();
 				result.status = IDResolveStatus::kInvalidCallsite;
 				trace_resolution(result);
-				stl::report_and_fail(fmt::format(
+				return fail(fmt::format(
 					"REL::ID {} requested AUTO_OFFSET for {} without an AUTO_CALLSITE target",
 					a_id.id(version),
 					runtime_family_text(version)));
@@ -791,7 +965,7 @@ namespace REL
 				result.rva.reset();
 				result.status = IDResolveStatus::kInvalidCallsite;
 				trace_resolution(result);
-				stl::report_and_fail(fmt::format(
+				return fail(fmt::format(
 					"REL::ID {} automatic callsite target {} could not be resolved ({})",
 					a_id.id(version),
 					specification->target().id(version),
@@ -802,7 +976,7 @@ namespace REL
 				result.rva.reset();
 				result.status = IDResolveStatus::kInvalidCallsite;
 				trace_resolution(result);
-				stl::report_and_fail(fmt::format(
+				return fail(fmt::format(
 					"REL::ID {} automatic callsite has an out-of-range RVA",
 					a_id.id(version)));
 			}
@@ -813,9 +987,19 @@ namespace REL
 				result.rva.reset();
 				result.status = IDResolveStatus::kInvalidCallsite;
 				trace_resolution(result);
-				stl::report_and_fail(fmt::format(
+				return fail(fmt::format(
 					"REL::ID {} automatic callsite owner is not a valid runtime function",
 					a_id.id(version)));
+			}
+			// On the listed versions, prefer the known offset if it still calls the target or an existing hook.
+			std::optional<std::ptrdiff_t> verifiedOffset;
+			if (const auto fallback = specification->fallback_offset(version)) {
+				const auto check = check_fallback_callsite(
+					Module::get(), scopes, ownerRVA, *fallback, targetRVA, specification->branch());
+				result.note = check.note;
+				if (check.accepted) {
+					verifiedOffset = *fallback;
+				}
 			}
 			std::vector<std::ptrdiff_t> matches;
 			for (const auto& [functionBegin, functionEnd] : scopes) {
@@ -835,7 +1019,10 @@ namespace REL
 			detail::CallsiteScanResult scan;
 			scan.matches = matches.size();
 			const auto occurrence = specification->occurrence();
-			if (matches.empty()) {
+			if (verifiedOffset) {
+				scan.offset = *verifiedOffset;
+				scan.status = detail::CallsiteScanStatus::kResolved;
+			} else if (matches.empty()) {
 				scan.status = detail::CallsiteScanStatus::kNotFound;
 			} else if (occurrence == AutoCallsite::UNIQUE) {
 				if (matches.size() == 1) {
@@ -863,12 +1050,13 @@ namespace REL
 				                    IDResolveStatus::kCallsiteNotFound :
 				                    IDResolveStatus::kInvalidCallsite;
 				trace_resolution(result);
-				stl::report_and_fail(fmt::format(
-					"REL::ID {} automatic callsite to ID {} could not be resolved ({}, matches={})",
+				return fail(fmt::format(
+					"REL::ID {} automatic callsite to ID {} could not be resolved ({}, matches={}){}",
 					a_id.id(version),
 					specification->target().id(version),
 					id_resolve_status_text(result.status),
-					scan.matches));
+					scan.matches,
+					result.note.empty() ? std::string{} : "; " + result.note));
 			}
 			selectedOffset = *scan.offset;
 			automaticOffset = true;
@@ -897,14 +1085,31 @@ namespace REL
 			result.finalRva.reset();
 			result.status = IDResolveStatus::kInvalidOffset;
 			trace_resolution(result);
-			stl::report_and_fail(fmt::format(
+			return fail(fmt::format(
 				"REL::ID {} offset {} resolves outside the loaded module",
 				a_id.id(version),
 				selectedOffset));
 		}
 		result.finalRva = *finalRva;
 		trace_resolution(result);
+		if (a_out) {
+			*a_out = result;
+		}
 		return *finalRva;
+	}
+
+	std::size_t IDDatabase::id2offset(const ID& a_id, const VariantOffset& a_offset) const
+	{
+		return *id2offset_checked(a_id, a_offset, true, nullptr);
+	}
+
+	CallsiteLookup try_resolve_callsite(const ID& a_owner, const VariantOffset& a_offset)
+	{
+		CallsiteLookup lookup;
+		if (const auto rva = IDDatabase::get().id2offset_checked(a_owner, a_offset, false, std::addressof(lookup.resolution))) {
+			lookup.address = Module::get().base() + *rva;
+		}
+		return lookup;
 	}
 
 	IDResolveResult IDDatabase::resolve(std::uint64_t a_id, IDResolveMode a_mode) const
