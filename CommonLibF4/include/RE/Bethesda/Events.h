@@ -573,7 +573,9 @@ namespace RE
 	struct alignas(0x10) DamageImpactData
 	{
 	public:
-		static constexpr std::size_t OG_SIZE = 0x38;
+		// Same size on OG and AE: the data ends at 0x38, the 16-byte alignment pads it to 0x40
+		// (OG 1.10.163 and AE 1.11.221 HitData both start aggressor at +0x40).
+		static constexpr std::size_t OG_SIZE = 0x40;
 		static constexpr std::size_t AE_SIZE = 0x40;
 
 		[[nodiscard]] static constexpr std::size_t GetRuntimeSize(const REL::Version& a_version) noexcept
@@ -598,7 +600,9 @@ namespace RE
 	class HitData
 	{
 	public:
-		static constexpr std::size_t OG_SIZE = 0xD8;
+		// Same size and layout on OG and AE: AIProcess::SetLastHitData allocates 0xE0 and
+		// TESObjectREFR_Events::SendHit reserves a 0xE0 block in OG 1.10.163 and AE 1.11.221.
+		static constexpr std::size_t OG_SIZE = 0xE0;
 		static constexpr std::size_t AE_SIZE = 0xE0;
 
 		[[nodiscard]] static constexpr std::size_t GetRuntimeSize(const REL::Version& a_version) noexcept
@@ -678,15 +682,18 @@ namespace RE
 		float criticalDamageMult;                                                 // C0
 		stl::enumeration<Flag, std::uint32_t> flags;                              // C4
 		BGSEquipIndex equipIndex;                                                 // C8
-		std::uint32_t material;                                                   // D0
-		stl::enumeration<BGSBodyPartDefs::LIMB_ENUM, std::uint32_t> damageLimb;    // D4
+		std::uint32_t material;                                                   // CC
+		stl::enumeration<BGSBodyPartDefs::LIMB_ENUM, std::uint32_t> damageLimb;    // D0
+		// D4-DF: alignment padding, not initialized by the engine
 	};
 	static_assert(sizeof(HitData) == 0xE0);
 
 	class TESHitEvent
 	{
 	public:
-		static constexpr std::size_t OG_SIZE = 0x108;
+		// Same layout on OG, NG and AE (TESHitEvent ctor, TESObjectREFR_Events::SendHit, Get* below):
+		// HitData 0xE0, then target E0 ... usesHitData 100.
+		static constexpr std::size_t OG_SIZE = 0x110;
 		static constexpr std::size_t AE_SIZE = 0x110;
 
 		[[nodiscard]] static constexpr std::size_t GetRuntimeSize(const REL::Version& a_version) noexcept
@@ -706,10 +713,35 @@ namespace RE
 			return func();
 		}
 
+		// Weapon hits (TESObjectREFR_Events::SendHit(const HitData&), usesHitData = true) are sent with
+		// target and cause null. These getters resolve them from hitData.target / hitData.aggressor and
+		// store the result in the event, like the engine's own sinks do.
+		[[nodiscard]] TESObjectREFR* GetTarget() const
+		{
+			using func_t = decltype(&TESHitEvent::GetTarget);
+			REL::Relocation<func_t> func{ REL::ID(1570502, 2201542) };
+			return func(this);
+		}
+
+		[[nodiscard]] TESObjectREFR* GetCause() const
+		{
+			using func_t = decltype(&TESHitEvent::GetCause);
+			REL::Relocation<func_t> func{ REL::ID(599646, 2201543) };
+			return func(this);
+		}
+
+		// Resolves the projectile from hitData's weapon and ammo when projectileFormID is 0.
+		[[nodiscard]] std::uint32_t GetProjectileFormID() const
+		{
+			using func_t = decltype(&TESHitEvent::GetProjectileFormID);
+			REL::Relocation<func_t> func{ REL::ID(1103957, 2201546) };
+			return func(this);
+		}
+
 		// members
 		HitData hitData;                    // 000
-		NiPointer<TESObjectREFR> target;     // 0E0
-		NiPointer<TESObjectREFR> cause;      // 0E8
+		NiPointer<TESObjectREFR> target;     // 0E0 - null for weapon hits, use GetTarget()
+		NiPointer<TESObjectREFR> cause;      // 0E8 - null for weapon hits, use GetCause()
 		BSFixedString material;              // 0F0
 		std::uint32_t sourceFormID;          // 0F8
 		std::uint32_t projectileFormID;      // 0FC
